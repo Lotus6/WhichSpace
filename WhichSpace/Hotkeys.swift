@@ -54,11 +54,6 @@ final class HotkeyCenter {
     /// Mission Control shortcut range and the per-display Space limit.
     nonisolated static let maxJumpTargets = Layout.maxSpacesPerDisplay
 
-    /// Keep WhichSpace's Carbon registrations out of the way long enough for
-    /// a forwarded Mission Control key event to reach macOS instead of
-    /// recursively invoking another WhichSpace binding.
-    private static let forwardedHotKeySettleDelay: Duration = .milliseconds(20)
-
     /// Every bindable name, for whole-surface operations like a full reset.
     static var allNames: [KeyboardShortcuts.Name] {
         [.switchLeft, .switchRight, .switchPrevious, .sendLeft, .sendRight, .moveLeft, .moveRight]
@@ -66,6 +61,14 @@ final class HotkeyCenter {
             + KeyboardShortcuts.Name.sendToSpace
             + KeyboardShortcuts.Name.moveToSpace
             + KeyboardShortcuts.Name.storedFullscreenJumps
+    }
+
+    /// Only the binding with the forwarded system key combination can
+    /// intercept that event. Leave all other shortcuts registered.
+    static func enabledNames(matching shortcut: KeyboardShortcuts.Shortcut) -> [KeyboardShortcuts.Name] {
+        allNames.filter {
+            KeyboardShortcuts.getShortcut(for: $0) == shortcut && KeyboardShortcuts.isEnabled(for: $0)
+        }
     }
 
     /// Clears every recorded binding, returning the pane to its fresh state.
@@ -277,29 +280,6 @@ final class HotkeyCenter {
         return false
     }
 
-    /// Whether the next switch will post Mission Control key events: by
-    /// preference, or because a held mouse button forces the classic
-    /// fallback in SpaceSwitcher.
-    private var switchForwardsKeyEvents: Bool {
-        store.classicSpaceSwitching || NSEvent.pressedMouseButtons != 0
-    }
-
-    /// Runs a switch action. When the switch forwards Mission Control key
-    /// events, the Carbon registrations step aside long enough for them to
-    /// reach macOS instead of recursively invoking another binding.
-    private func performSwitch(forwardsKeyEvents: Bool, _ action: () -> Void) {
-        guard forwardsKeyEvents else {
-            action()
-            return
-        }
-        KeyboardShortcuts.disable(Self.allNames)
-        action()
-        Task { @MainActor in
-            try? await Task.sleep(for: Self.forwardedHotKeySettleDelay)
-            KeyboardShortcuts.enable(Self.allNames)
-        }
-    }
-
     /// Wrapping follows the same preference as scroll switching, so the two
     /// relative surfaces agree about what happens at the edges. Skipping
     /// empty Spaces is a hotkey-only preference: scroll and the scripting
@@ -308,14 +288,12 @@ final class HotkeyCenter {
         guard ensureAccessibility() else {
             return
         }
-        performSwitch(forwardsKeyEvents: switchForwardsKeyEvents) {
-            let skipped = store.hotkeysSkipEmptySpaces ? appState.emptySpaceIDs() : []
-            _ = SpaceSwitcher.switchRelative(
-                goRight: goRight,
-                wrap: store.scrollWrapAround,
-                skippingSpaceIDs: skipped
-            )
-        }
+        let skipped = store.hotkeysSkipEmptySpaces ? appState.emptySpaceIDs() : []
+        _ = SpaceSwitcher.switchRelative(
+            goRight: goRight,
+            wrap: store.scrollWrapAround,
+            skippingSpaceIDs: skipped
+        )
     }
 
     /// Nothing to go back to before the first Space change of the session, so
@@ -324,9 +302,7 @@ final class HotkeyCenter {
         guard ensureAccessibility() else {
             return
         }
-        performSwitch(forwardsKeyEvents: switchForwardsKeyEvents) {
-            try? ScriptingHelpers.switchToPreviousSpace(appState: appState)
-        }
+        try? ScriptingHelpers.switchToPreviousSpace(appState: appState)
     }
 
     /// Out-of-range failures stay silent: a hotkey has no caller to report
@@ -336,11 +312,7 @@ final class HotkeyCenter {
         guard ensureAccessibility() else {
             return
         }
-        // The global route may forward a numbered Mission Control key event
-        // even outside the classic path, so it always steps aside.
-        performSwitch(forwardsKeyEvents: !store.localSpaceNumbers || switchForwardsKeyEvents) {
-            try? ScriptingHelpers.switchToSpace(number: number, appState: appState, store: store)
-        }
+        try? ScriptingHelpers.switchToSpace(number: number, appState: appState, store: store)
     }
 
     /// Resolves the identity at press time so reordering Spaces never changes
@@ -352,8 +324,8 @@ final class HotkeyCenter {
         else {
             return
         }
-        performSwitch(forwardsKeyEvents: switchForwardsKeyEvents) {
-            _ = SpaceSwitcher.switchToSpace(id: target.spaceID)
+        if !SpaceSwitcher.switchToSpace(id: target.spaceID) {
+            _ = SpaceSwitcher.activateAppOnSpace(target.spaceID)
         }
     }
 

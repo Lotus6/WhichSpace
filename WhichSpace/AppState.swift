@@ -240,33 +240,30 @@ final class AppState {
         allSpaceEntries.map(\.id)
     }
 
-    /// Full-screen Spaces on the active menu-bar display. Synthetic horizontal
-    /// gestures operate on that display; another display becomes addressable
-    /// when it becomes active, matching locally numbered keyboard shortcuts.
-    /// The shortcut identity follows
+    /// Full-screen Spaces on every display, so a shortcut can find its target
+    /// even when another display is active. The shortcut identity follows
     /// the Space UUID when available, falling back to the managed ID that Dock
     /// keeps stable for the lifetime of that Space. A recreated full-screen or
     /// Split View Space therefore cannot accidentally inherit an old binding.
     var fullscreenShortcutTargets: [FullscreenShortcutTarget] {
-        guard let display = allDisplaysSpaceInfo.first(where: { $0.displayID == currentDisplayID }) else {
-            return []
-        }
-        return display.entries.enumerated().compactMap { index, entry in
-            guard entry.regularIndex == nil else {
-                return nil
+        allDisplaysSpaceInfo.flatMap { display in
+            display.entries.enumerated().compactMap { index, entry in
+                guard entry.regularIndex == nil else {
+                    return nil
+                }
+                let spaceIdentity: String
+                if let uuid = entry.uuid, !uuid.isEmpty {
+                    spaceIdentity = "uuid:\(uuid)"
+                } else {
+                    spaceIdentity = "id:\(entry.id)"
+                }
+                return FullscreenShortcutTarget(
+                    displayID: display.displayID,
+                    spaceID: entry.id,
+                    position: index + 1,
+                    identity: "\(display.displayID)|\(spaceIdentity)"
+                )
             }
-            let spaceIdentity: String
-            if let uuid = entry.uuid, !uuid.isEmpty {
-                spaceIdentity = "uuid:\(uuid)"
-            } else {
-                spaceIdentity = "id:\(entry.id)"
-            }
-            return FullscreenShortcutTarget(
-                displayID: display.displayID,
-                spaceID: entry.id,
-                position: index + 1,
-                identity: "\(display.displayID)|\(spaceIdentity)"
-            )
         }
     }
 

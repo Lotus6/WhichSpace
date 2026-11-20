@@ -18,7 +18,7 @@ struct DynamicDisplayTests {
 
     // MARK: - Multiple Display Configurations
 
-    @Test("full-screen shortcut targets use stable identity on active display")
+    @Test("full-screen shortcut targets remain available across displays")
     func fullscreenShortcutTargetsUseStableIdentity() {
         stub.activeDisplayIdentifier = "Main"
         stub.displays = [
@@ -46,6 +46,18 @@ struct DynamicDisplayTests {
                 position: 2,
                 identity: "Main|uuid:split-view"
             ),
+            FullscreenShortcutTarget(
+                displayID: "External",
+                spaceID: 250,
+                position: 1,
+                identity: "External|uuid:other-fullscreen"
+            ),
+        ])
+
+        stub.activeDisplayIdentifier = "External"
+        sut.forceSpaceUpdate()
+        #expect(sut.fullscreenShortcutTargets.map(\.identity) == [
+            "Main|uuid:split-view", "External|uuid:other-fullscreen",
         ])
     }
 

@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import KeyboardShortcuts
 
 // MARK: - Space Switching via Synthetic Dock-Swipe Gestures
 
@@ -792,7 +793,11 @@ enum SpaceSwitcher {
     /// has them switched off in System Settings, awaiting restoration.
     @MainActor private static var forceEnabledHotKeys: Set<CGSSymbolicHotKey> = []
 
-    /// Pending restoration of force-enabled hotkeys.
+    /// App bindings temporarily released because they use the same chord as
+    /// a forwarded Mission Control shortcut.
+    @MainActor private static var pendingAppHotKeyNames = Set<KeyboardShortcuts.Name>()
+
+    /// Pending restoration of system and app hotkeys.
     @MainActor private static var hotKeyRestoreTask: Task<Void, Never>?
 
     /// How long a force-enabled hotkey stays on after posting. The posted key
@@ -800,21 +805,23 @@ enum SpaceSwitcher {
     /// disabling again does not affect the in-flight switch.
     private static let hotKeyRestoreDelay: Duration = .milliseconds(250)
 
-    /// Turns force-enabled hotkeys back off once posted events have had time
-    /// to be matched, so a shortcut the user disabled in System Settings does
-    /// not stay live for the rest of the session. Each post pushes the
-    /// restoration back, keeping the hotkey on across rapid successive steps.
+    /// Restores system hotkeys before re-registering any app binding with the
+    /// same chord. Each forwarded event extends the same restoration window.
     @MainActor private static func scheduleHotKeyRestore() {
         hotKeyRestoreTask?.cancel()
         hotKeyRestoreTask = Task {
-            try? await Task.sleep(for: hotKeyRestoreDelay)
-            guard !Task.isCancelled else {
+            do {
+                try await Task.sleep(for: hotKeyRestoreDelay)
+            } catch {
                 return
             }
             for hotKey in forceEnabledHotKeys {
                 CGSSetSymbolicHotKeyEnabled(hotKey, false)
             }
             forceEnabledHotKeys.removeAll()
+            let names = Array(pendingAppHotKeyNames)
+            pendingAppHotKeyNames.removeAll()
+            KeyboardShortcuts.enable(names)
             hotKeyRestoreTask = nil
         }
     }
@@ -829,15 +836,6 @@ enum SpaceSwitcher {
             return false
         }
 
-        if !CGSIsSymbolicHotKeyEnabled(hotKey) {
-            guard CGSSetSymbolicHotKeyEnabled(hotKey, true) == .success else {
-                NSLog("SpaceSwitcher: failed to enable hot key %d", Int(hotKey))
-                return false
-            }
-            forceEnabledHotKeys.insert(hotKey)
-            scheduleHotKeyRestore()
-        }
-
         guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false)
         else {
@@ -845,10 +843,30 @@ enum SpaceSwitcher {
             return false
         }
 
+        let shortcut = KeyboardShortcuts.Shortcut(
+            carbonKeyCode: Int(keyCode),
+            carbonModifiers: Int(flags)
+        )
+        let conflictingNames = HotkeyCenter.enabledNames(matching: shortcut)
+        KeyboardShortcuts.disable(conflictingNames)
+
+        if !CGSIsSymbolicHotKeyEnabled(hotKey) {
+            guard CGSSetSymbolicHotKeyEnabled(hotKey, true) == .success else {
+                KeyboardShortcuts.enable(conflictingNames)
+                NSLog("SpaceSwitcher: failed to enable hot key %d", Int(hotKey))
+                return false
+            }
+            forceEnabledHotKeys.insert(hotKey)
+        }
+
         keyDown.flags = CGEventFlags(rawValue: UInt64(flags))
         keyDown.post(tap: .cghidEventTap)
         keyUp.flags = []
         keyUp.post(tap: .cghidEventTap)
+        pendingAppHotKeyNames.formUnion(conflictingNames)
+        if !forceEnabledHotKeys.isEmpty || !pendingAppHotKeyNames.isEmpty {
+            scheduleHotKeyRestore()
+        }
         return true
     }
 
