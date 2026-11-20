@@ -265,16 +265,27 @@ struct CGSDisplaySpaceProvider: DisplaySpaceProvider {
         return Set(spaces).intersection(spaceIDSet)
     }
 
-    /// Maps each fullscreen space ID to the PID of the app whose window lives on it.
-    /// Windows are grouped by owning app (front-to-back) so each app needs one
-    /// batched space query, and the walk stops once every space is resolved.
+    /// Maps each fullscreen Space to the app whose icon represents it. Split
+    /// View uses the leftmost tile recorded by WindowServer; spaces without
+    /// usable tile metadata fall back to the frontmost qualifying app.
     func fullscreenOwnerPIDs(forSpaceIDs spaceIDs: [Int]) -> [Int: pid_t] {
         guard !spaceIDs.isEmpty else {
             return [:]
         }
+
+        let managedDisplays = copyManagedDisplaySpaces()?.compactMap { $0 as? [String: Any] } ?? []
+        var owners = Self.leftmostTileOwnerPIDs(
+            managedDisplays: managedDisplays,
+            spaceIDs: spaceIDs
+        )
+        var unresolved = Set(spaceIDs).subtracting(owners.keys)
+        guard !unresolved.isEmpty else {
+            return owners
+        }
+
         let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
         guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return [:]
+            return owners
         }
 
         var windowsByPID: [pid_t: [Int]] = [:]
@@ -293,8 +304,6 @@ struct CGSDisplaySpaceProvider: DisplaySpaceProvider {
         }
 
         let occupantIDs = Set(spaceOccupantWindowIDs(Array(windowsByPID.values.joined())))
-        var unresolved = Set(spaceIDs)
-        var owners: [Int: pid_t] = [:]
         for pid in orderedPIDs {
             guard !unresolved.isEmpty else {
                 break
@@ -312,6 +321,76 @@ struct CGSDisplaySpaceProvider: DisplaySpaceProvider {
             }
         }
         return owners
+    }
+
+    /// Resolves the left tile directly from `TileLayoutManager`. Comparing
+    /// `TileRect.X` avoids relying on the private array's incidental order.
+    /// Invalid entries are omitted so the caller can use its window fallback.
+    static func leftmostTileOwnerPIDs(
+        managedDisplays: [[String: Any]],
+        spaceIDs: [Int]
+    ) -> [Int: pid_t] {
+        let requested = Set(spaceIDs)
+        guard !requested.isEmpty else {
+            return [:]
+        }
+
+        var owners: [Int: pid_t] = [:]
+        for display in managedDisplays {
+            guard let spaces = display["Spaces"] as? [[String: Any]] else {
+                continue
+            }
+            for space in spaces {
+                guard let spaceID = integer(space["ManagedSpaceID"]),
+                      requested.contains(spaceID),
+                      let layout = space["TileLayoutManager"] as? [String: Any],
+                      let tiles = layout["TileSpaces"] as? [[String: Any]]
+                else {
+                    continue
+                }
+
+                var leftmost: (x: Double, pid: pid_t)?
+                for tile in tiles {
+                    guard let pidValue = integer(tile["pid"]),
+                          pidValue > 0,
+                          let pid = pid_t(exactly: pidValue),
+                          let rect = tile["TileRect"] as? [String: Any],
+                          let x = number(rect["X"])
+                    else {
+                        continue
+                    }
+                    let candidate = (x: x, pid: pid)
+                    if let current = leftmost {
+                        if candidate.x < current.x {
+                            leftmost = candidate
+                        }
+                    } else {
+                        leftmost = candidate
+                    }
+                }
+                if let leftmost {
+                    owners[spaceID] = leftmost.pid
+                }
+            }
+        }
+        return owners
+    }
+
+    private static func integer(_ value: Any?) -> Int? {
+        if let value = value as? Int {
+            return value
+        }
+        return (value as? NSNumber)?.intValue
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        if let value = value as? Double {
+            return value
+        }
+        if let value = value as? Int {
+            return Double(value)
+        }
+        return (value as? NSNumber)?.doubleValue
     }
 
     /// Maps each requested Space ID to the apps with qualifying windows on

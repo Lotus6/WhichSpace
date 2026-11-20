@@ -860,6 +860,55 @@ struct SpacePickerTests {
         #expect(owners == [1: [9, 8]])
     }
 
+    @Test("fullscreen owner uses the leftmost tile rather than tile array order")
+    func fullscreenOwnerUsesLeftmostTile() {
+        let displays: [[String: Any]] = [[
+            "Spaces": [[
+                "ManagedSpaceID": 101,
+                "TileLayoutManager": [
+                    "TileSpaces": [
+                        ["pid": 22, "TileRect": ["X": 762.0, "Y": 0.0]],
+                        ["pid": 11, "TileRect": ["X": 0.0, "Y": 0.0]],
+                    ],
+                ],
+            ]],
+        ]]
+
+        let owners = CGSDisplaySpaceProvider.leftmostTileOwnerPIDs(
+            managedDisplays: displays,
+            spaceIDs: [101]
+        )
+
+        #expect(owners == [101: 11])
+    }
+
+    @Test("fullscreen owner omits malformed tile metadata for fallback")
+    func fullscreenOwnerOmitsMalformedTiles() {
+        let displays: [[String: Any]] = [[
+            "Spaces": [
+                [
+                    "ManagedSpaceID": 101,
+                    "TileLayoutManager": [
+                        "TileSpaces": [["pid": 11]],
+                    ],
+                ],
+                [
+                    "ManagedSpaceID": 102,
+                    "TileLayoutManager": [
+                        "TileSpaces": [["pid": 22, "TileRect": ["X": 0.0]]],
+                    ],
+                ],
+            ],
+        ]]
+
+        let owners = CGSDisplaySpaceProvider.leftmostTileOwnerPIDs(
+            managedDisplays: displays,
+            spaceIDs: [101]
+        )
+
+        #expect(owners.isEmpty)
+    }
+
     private func makeEntry(
         targetSpace: Int? = 1,
         appIcons: [NSImage] = [],
