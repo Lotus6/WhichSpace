@@ -1185,6 +1185,24 @@ enum SpaceSwitcher {
     static func activateAppOnSpace(_ spaceID: Int) -> Bool {
         let conn = _CGSDefaultConnection()
 
+        // Split View contains two apps on the same Space. Window-list order is
+        // transient, so use WindowServer's tile geometry to choose the left
+        // tile deterministically before falling back to the legacy scan.
+        if let managedDisplaysRef = CGSCopyManagedDisplaySpaces(conn),
+           let managedDisplays = managedDisplaysRef.takeRetainedValue() as? [[String: Any]],
+           let pid = CGSDisplaySpaceProvider.leftmostTileOwnerPIDs(
+               managedDisplays: managedDisplays,
+               spaceIDs: [spaceID]
+           )[spaceID],
+           let app = NSRunningApplication(processIdentifier: pid),
+           app.activate(options: []) {
+            NSLog(
+                "SpaceSwitcher: requested activation of left tile \(app.localizedName ?? "app") "
+                    + "for fullscreen space \(spaceID)"
+            )
+            return true
+        }
+
         // Get all windows
         let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
         guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
