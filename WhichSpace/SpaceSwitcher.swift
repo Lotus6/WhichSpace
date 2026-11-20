@@ -325,10 +325,11 @@ enum SpaceSwitcher {
         let activeDisplayID = activeDisplayRef.takeRetainedValue() as String
 
         let displays = systemOrdered(managedDisplays(connection: conn))
-        let pointerDisplayID = DisplayGeometry.identifierUnderPointer()
-        guard let activeDisplay = displays.first(where: { $0.identifier == pointerDisplayID })
-            ?? displays.first(where: { $0.identifier == activeDisplayID })
-            ?? displays.first else {
+        guard let activeDisplay = displayForShortcut(
+            in: displays,
+            pointerDisplayID: DisplayGeometry.identifierUnderPointer(),
+            activeDisplayID: activeDisplayID
+        ) else {
             NSLog("SpaceSwitcher: no display found")
             return false
         }
@@ -349,7 +350,7 @@ enum SpaceSwitcher {
         }
     }
 
-    /// Switches one Space left or right on the menu bar display, clamped at the
+    /// Switches one Space left or right on the selected display, clamped at the
     /// edges unless `wrap` is true, in which case scrolling past either edge
     /// wraps around to the opposite end. Spaces whose IDs appear in
     /// `skippingSpaceIDs` are jumped over, landing on the nearest remaining
@@ -360,7 +361,8 @@ enum SpaceSwitcher {
     @MainActor static func switchRelative(
         goRight: Bool,
         wrap: Bool = false,
-        skippingSpaceIDs: Set<Int> = []
+        skippingSpaceIDs: Set<Int> = [],
+        onDisplay displayID: String? = nil
     ) -> Bool {
         let conn = _CGSDefaultConnection()
 
@@ -371,7 +373,11 @@ enum SpaceSwitcher {
         let activeDisplayID = activeDisplayRef.takeRetainedValue() as String
 
         let displays = managedDisplays(connection: conn)
-        guard let display = displays.first(where: { $0.identifier == activeDisplayID }) ?? displays.first else {
+        guard let display = displayForShortcut(
+            in: displays,
+            pointerDisplayID: displayID,
+            activeDisplayID: activeDisplayID
+        ) else {
             NSLog("SpaceSwitcher: no display found")
             return false
         }
@@ -554,6 +560,18 @@ enum SpaceSwitcher {
             return []
         }
         return raw.compactMap(ManagedDisplay.init(dict:))
+    }
+
+    /// A keyboard shortcut follows the pointer when its display is managed.
+    /// Other callers pass nil to retain the menu-bar display behavior.
+    static func displayForShortcut(
+        in displays: [ManagedDisplay],
+        pointerDisplayID: String?,
+        activeDisplayID: String
+    ) -> ManagedDisplay? {
+        displays.first(where: { $0.identifier == pointerDisplayID })
+            ?? displays.first(where: { $0.identifier == activeDisplayID })
+            ?? displays.first
     }
 
     /// A pure routing decision kept separate from event posting so

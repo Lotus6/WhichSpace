@@ -292,7 +292,8 @@ final class HotkeyCenter {
         _ = SpaceSwitcher.switchRelative(
             goRight: goRight,
             wrap: store.scrollWrapAround,
-            skippingSpaceIDs: skipped
+            skippingSpaceIDs: skipped,
+            onDisplay: DisplayGeometry.identifierUnderPointer()
         )
     }
 

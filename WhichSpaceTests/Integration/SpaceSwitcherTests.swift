@@ -4,6 +4,21 @@ import Testing
 
 @MainActor
 struct SpaceSwitcherTests {
+    @Test("keyboard routes use the pointer display before stale menu-bar focus")
+    func keyboardRoute_prefersPointerDisplay() throws {
+        let displays = try twoDisplays()
+        #expect(SpaceSwitcher.displayForShortcut(
+            in: displays,
+            pointerDisplayID: "DisplayB",
+            activeDisplayID: "DisplayA"
+        )?.identifier == "DisplayB")
+        #expect(SpaceSwitcher.displayForShortcut(
+            in: displays,
+            pointerDisplayID: nil,
+            activeDisplayID: "DisplayA"
+        )?.identifier == "DisplayA")
+    }
+
     @Test("status-item mouse-up stays instant only on macOS 27")
     func statusItemMouseUp_ignoresHeldButtonOnlyWhenPayloadIsRequired() {
         #expect(!SpaceSwitcher.heldButtonRequiresClassicPath(
