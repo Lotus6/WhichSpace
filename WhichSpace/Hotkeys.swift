@@ -324,7 +324,11 @@ final class HotkeyCenter {
         else {
             return
         }
-        if !SpaceSwitcher.switchToSpace(id: target.spaceID) {
+        let pointerIsOnTarget = DisplayGeometry.identifierUnderPointer() == target.displayID
+        if !SpaceSwitcher.switchToSpace(
+            id: target.spaceID,
+            onDisplay: pointerIsOnTarget ? target.displayID : nil
+        ) {
             _ = SpaceSwitcher.activateAppOnSpace(target.spaceID)
         }
     }

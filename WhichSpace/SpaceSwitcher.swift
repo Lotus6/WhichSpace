@@ -234,17 +234,27 @@ enum SpaceSwitcher {
 
     // MARK: - Public API
 
-    /// Switches to the space with the given CGS space ID on the menu bar display.
+    /// Switches to the space with the given CGS space ID on the menu bar display,
+    /// or on an explicitly selected display when its shortcut is under the pointer.
     /// Posts synthetic dock-swipe gestures to move from the current space to the target.
     @discardableResult
-    @MainActor static func switchToSpace(id targetSpaceID: Int, fromStatusItemClick: Bool = false) -> Bool {
+    @MainActor static func switchToSpace(
+        id targetSpaceID: Int,
+        fromStatusItemClick: Bool = false,
+        onDisplay displayID: String? = nil
+    ) -> Bool {
         let conn = _CGSDefaultConnection()
 
-        guard let activeDisplayRef = CGSCopyActiveMenuBarDisplayIdentifier(conn) else {
-            NSLog("SpaceSwitcher: failed to get active menu bar display")
-            return false
+        let activeDisplayID: String
+        if let displayID {
+            activeDisplayID = displayID
+        } else {
+            guard let activeDisplayRef = CGSCopyActiveMenuBarDisplayIdentifier(conn) else {
+                NSLog("SpaceSwitcher: failed to get active menu bar display")
+                return false
+            }
+            activeDisplayID = activeDisplayRef.takeRetainedValue() as String
         }
-        let activeDisplayID = activeDisplayRef.takeRetainedValue() as String
 
         let displays = managedDisplays(connection: conn)
         guard let display = displays.first(where: { $0.identifier == activeDisplayID }) ?? displays.first else {
@@ -315,9 +325,10 @@ enum SpaceSwitcher {
         let activeDisplayID = activeDisplayRef.takeRetainedValue() as String
 
         let displays = systemOrdered(managedDisplays(connection: conn))
-        guard let activeDisplay = displays.first(
-            where: { $0.identifier == activeDisplayID }
-        ) ?? displays.first else {
+        let pointerDisplayID = DisplayGeometry.identifierUnderPointer()
+        guard let activeDisplay = displays.first(where: { $0.identifier == pointerDisplayID })
+            ?? displays.first(where: { $0.identifier == activeDisplayID })
+            ?? displays.first else {
             NSLog("SpaceSwitcher: no display found")
             return false
         }
@@ -332,7 +343,7 @@ enum SpaceSwitcher {
 
         switch route {
         case let .activeDisplay(spaceID):
-            return switchToSpace(id: spaceID)
+            return switchToSpace(id: spaceID, onDisplay: activeDisplay.identifier)
         case let .otherDisplay(hotKey):
             return postHotKey(hotKey)
         }

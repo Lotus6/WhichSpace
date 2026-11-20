@@ -33,6 +33,23 @@ enum ManagedSpaceKind {
 /// Returns nil for identifiers with no matching display, including the
 /// literal "Main" used when "Displays have separate Spaces" is off.
 enum DisplayGeometry {
+    /// The CGS display identifier under the pointer. Keyboard focus and the
+    /// active menu-bar display can still belong to another screen.
+    static func identifierUnderPointer() -> String? {
+        guard let point = CGEvent(source: nil)?.location else {
+            return nil
+        }
+        var displayID = kCGNullDirectDisplay
+        var count: UInt32 = 0
+        guard CGGetDisplaysWithPoint(point, 1, &displayID, &count) == .success,
+              count == 1,
+              let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue()
+        else {
+            return nil
+        }
+        return CFUUIDCreateString(nil, uuid) as String?
+    }
+
     static func bounds(forDisplayIdentifier identifier: String) -> CGRect? {
         guard let uuid = CFUUIDCreateFromString(nil, identifier as CFString) else {
             return nil
