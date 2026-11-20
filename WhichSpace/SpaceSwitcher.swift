@@ -1180,9 +1180,8 @@ enum SpaceSwitcher {
 
     // MARK: - Fullscreen Space Switching
 
-    /// Activates an app that has a window on the given space ID (used for fullscreen spaces).
-    /// macOS will automatically switch to the fullscreen space when the app is activated.
-    /// Returns true if an app was found and activated.
+    /// Requests activation of an app with a window on the given fullscreen Space.
+    /// The activation result does not confirm that macOS switched to that Space.
     static func activateAppOnSpace(_ spaceID: Int) -> Bool {
         let conn = _CGSDefaultConnection()
 
@@ -1223,7 +1222,7 @@ enum SpaceSwitcher {
                 if let app = NSRunningApplication(processIdentifier: pid) {
                     let activated = app.activate(options: [])
                     if activated {
-                        NSLog("SpaceSwitcher: activated \(app.localizedName ?? "app") for fullscreen space \(spaceID)")
+                        NSLog("SpaceSwitcher: requested activation of \(app.localizedName ?? "app") for fullscreen space \(spaceID)")
                         return true
                     }
                 }
