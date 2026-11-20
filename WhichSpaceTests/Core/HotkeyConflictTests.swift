@@ -80,4 +80,15 @@ struct HotkeyConflictTests {
             #expect(owner == name)
         }
     }
+
+    @Test("full-screen shortcut names are stable and key-path safe")
+    func fullscreenShortcutNameIsStableAndKeyPathSafe() {
+        let identity = "Display.Main|uuid:split-view"
+        let first = KeyboardShortcuts.Name.jumpToFullscreenSpace(identity: identity)
+        let second = KeyboardShortcuts.Name.jumpToFullscreenSpace(identity: identity)
+
+        #expect(first == second)
+        #expect(first.rawValue.hasPrefix(KeyboardShortcuts.Name.fullscreenJumpPrefix))
+        #expect(!first.rawValue.contains("."))
+    }
 }

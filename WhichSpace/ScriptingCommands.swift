@@ -534,11 +534,7 @@ enum ScriptingHelpers {
             return
         }
         let entry = entries[number - 1]
-        if entry.regularIndex != nil {
-            SpaceSwitcher.switchToSpace(id: entry.id)
-        } else {
-            _ = SpaceSwitcher.activateAppOnSpace(entry.id)
-        }
+        SpaceSwitcher.switchToSpace(id: entry.id)
     }
 
     /// Switches to a globally numbered Desktop, which may live on another
@@ -566,11 +562,7 @@ enum ScriptingHelpers {
         guard let entry = appState.previousSpaceEntry else {
             throw .noPreviousSpace
         }
-        if entry.regularIndex != nil {
-            SpaceSwitcher.switchToSpace(id: entry.id)
-        } else {
-            _ = SpaceSwitcher.activateAppOnSpace(entry.id)
-        }
+        SpaceSwitcher.switchToSpace(id: entry.id)
     }
 
     /// Switches one Space left or right on the current display, clamped at the

@@ -1,7 +1,10 @@
 import AppKit
 import KeyboardShortcuts
+import Observation
 
 extension KeyboardShortcuts.Name {
+    static let fullscreenJumpPrefix = "switchToFullscreenSpace-"
+
     static let switchLeft = Self("switchLeft")
     static let switchRight = Self("switchRight")
     static let switchPrevious = Self("switchPrevious")
@@ -26,6 +29,20 @@ extension KeyboardShortcuts.Name {
     static let moveToSpace: [Self] = (1 ... HotkeyCenter.maxJumpTargets).map {
         Self("moveToSpace\($0)")
     }
+
+    /// A dynamic name follows the managed full-screen Space rather than its
+    /// current position. UUIDs and display identifiers do not normally contain
+    /// dots, but the shortcut library reserves that character for key paths.
+    static func jumpToFullscreenSpace(identity: String) -> Self {
+        let safeIdentity = identity.replacingOccurrences(of: ".", with: "_")
+        return Self("\(fullscreenJumpPrefix)\(safeIdentity)")
+    }
+
+    @MainActor static var storedFullscreenJumps: [Self] {
+        KeyboardShortcuts.storedNames
+            .filter { $0.rawValue.hasPrefix(fullscreenJumpPrefix) }
+            .sorted { $0.rawValue < $1.rawValue }
+    }
 }
 
 /// Routes recorded global hotkeys through the shared switching backends.
@@ -48,6 +65,7 @@ final class HotkeyCenter {
             + KeyboardShortcuts.Name.jumpToSpace
             + KeyboardShortcuts.Name.sendToSpace
             + KeyboardShortcuts.Name.moveToSpace
+            + KeyboardShortcuts.Name.storedFullscreenJumps
     }
 
     /// Clears every recorded binding, returning the pane to its fresh state.
@@ -89,7 +107,10 @@ final class HotkeyCenter {
     /// current state. Unreadable entries clear their binding rather than
     /// keeping a value the backup meant to change.
     static func importBindings(_ bindings: [String: String]) {
-        for name in allNames {
+        let importedFullscreenNames = bindings.keys
+            .filter { $0.hasPrefix(KeyboardShortcuts.Name.fullscreenJumpPrefix) }
+            .map { KeyboardShortcuts.Name($0) }
+        for name in Set(allNames + importedFullscreenNames) {
             if let encoded = bindings[name.rawValue],
                let shortcut = try? JSONDecoder().decode(
                    KeyboardShortcuts.Shortcut.self, from: Data(encoded.utf8)
@@ -195,6 +216,35 @@ final class HotkeyCenter {
                 }
             }
         }
+        observeFullscreenTargets()
+    }
+
+    /// Identities already carrying a handler. Handlers remain registered when
+    /// their Space disappears, mirroring inert numbered bindings; a later
+    /// recreation gets a different identity and cannot be switched by mistake.
+    private var registeredFullscreenIdentities = Set<String>()
+
+    /// Re-arms Observation after every topology update and registers handlers
+    /// for newly created full-screen or Split View Spaces.
+    private func observeFullscreenTargets() {
+        withObservationTracking {
+            syncFullscreenHandlers(for: appState.fullscreenShortcutTargets)
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.observeFullscreenTargets()
+            }
+        }
+    }
+
+    private func syncFullscreenHandlers(for targets: [FullscreenShortcutTarget]) {
+        for target in targets where registeredFullscreenIdentities.insert(target.identity).inserted {
+            let name = KeyboardShortcuts.Name.jumpToFullscreenSpace(identity: target.identity)
+            KeyboardShortcuts.onKeyDown(for: name) { [weak self] in
+                Task { @MainActor in
+                    self?.switchToFullscreenSpace(identity: target.identity)
+                }
+            }
+        }
     }
 
     /// Whether a press has already triggered the permission flow this launch.
@@ -290,6 +340,20 @@ final class HotkeyCenter {
         // even outside the classic path, so it always steps aside.
         performSwitch(forwardsKeyEvents: !store.localSpaceNumbers || switchForwardsKeyEvents) {
             try? ScriptingHelpers.switchToSpace(number: number, appState: appState, store: store)
+        }
+    }
+
+    /// Resolves the identity at press time so reordering Spaces never changes
+    /// the target. If the full-screen Space has been closed, the binding stays
+    /// recorded but inert until the same managed Space becomes available.
+    private func switchToFullscreenSpace(identity: String) {
+        guard ensureAccessibility(),
+              let target = appState.fullscreenShortcutTargets.first(where: { $0.identity == identity })
+        else {
+            return
+        }
+        performSwitch(forwardsKeyEvents: switchForwardsKeyEvents) {
+            _ = SpaceSwitcher.switchToSpace(id: target.spaceID)
         }
     }
 

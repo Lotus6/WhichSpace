@@ -248,12 +248,9 @@ final class ActionHandler: NSObject {
             _ = accessibilityPermissionPrompt()
             return
         }
-        // Fullscreen spaces don't have a targetSpace - activate the app instead
-        if entry.targetSpace == nil {
-            _ = SpaceSwitcher.activateAppOnSpace(entry.spaceID)
-        } else {
-            SpaceSwitcher.switchToSpace(id: entry.spaceID)
-        }
+        // A full-screen or Split View row is still one managed Space, so it
+        // can use the same instant gesture route as a regular Desktop.
+        SpaceSwitcher.switchToSpace(id: entry.spaceID, fromStatusItemClick: true)
     }
 
     /// Shows the accessibility permission alert and starts the request when

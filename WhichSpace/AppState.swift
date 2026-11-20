@@ -30,6 +30,20 @@ struct SpaceEntry: Equatable {
     }
 }
 
+/// A currently available full-screen Space that can receive its own global
+/// shortcut. Split View contributes one target: both tiled applications share
+/// the same managed Space and should be restored together.
+struct FullscreenShortcutTarget: Hashable, Sendable, Identifiable {
+    let displayID: String
+    let spaceID: Int
+    let position: Int
+    let identity: String
+
+    var id: String {
+        identity
+    }
+}
+
 /// Information about spaces on a single display
 struct DisplaySpaceInfo: Equatable {
     let displayID: String
@@ -224,6 +238,68 @@ final class AppState {
 
     var allSpaceIDs: [Int] {
         allSpaceEntries.map(\.id)
+    }
+
+    /// Full-screen Spaces on the active menu-bar display. Synthetic horizontal
+    /// gestures operate on that display; another display becomes addressable
+    /// when it becomes active, matching locally numbered keyboard shortcuts.
+    /// The shortcut identity follows
+    /// the Space UUID when available, falling back to the managed ID that Dock
+    /// keeps stable for the lifetime of that Space. A recreated full-screen or
+    /// Split View Space therefore cannot accidentally inherit an old binding.
+    var fullscreenShortcutTargets: [FullscreenShortcutTarget] {
+        guard let display = allDisplaysSpaceInfo.first(where: { $0.displayID == currentDisplayID }) else {
+            return []
+        }
+        return display.entries.enumerated().compactMap { index, entry in
+            guard entry.regularIndex == nil else {
+                return nil
+            }
+            let spaceIdentity: String
+            if let uuid = entry.uuid, !uuid.isEmpty {
+                spaceIdentity = "uuid:\(uuid)"
+            } else {
+                spaceIdentity = "id:\(entry.id)"
+            }
+            return FullscreenShortcutTarget(
+                displayID: display.displayID,
+                spaceID: entry.id,
+                position: index + 1,
+                identity: "\(display.displayID)|\(spaceIdentity)"
+            )
+        }
+    }
+
+    /// Resolves the applications occupying each full-screen Space off-main,
+    /// then turns their PIDs into front-to-back display names. A Split View
+    /// target therefore reads, for example, "iTerm2 + Space Pro".
+    func fullscreenApplicationNames(
+        for targets: [FullscreenShortcutTarget]
+    ) async -> [String: String] {
+        let provider = displaySpaceProvider
+        let spaceIDs = targets.map(\.spaceID)
+        let owners = await Task.detached(priority: .userInitiated) {
+            provider.windowOwnerPIDs(forSpaceIDs: spaceIDs)
+        }.value
+
+        var result: [String: String] = [:]
+        for target in targets {
+            var seen = Set<String>()
+            let names = (owners[target.spaceID] ?? []).compactMap { pid -> String? in
+                guard let app = NSRunningApplication(processIdentifier: pid),
+                      app.activationPolicy == .regular,
+                      let name = app.localizedName,
+                      seen.insert(name).inserted
+                else {
+                    return nil
+                }
+                return name
+            }
+            if !names.isEmpty {
+                result[target.identity] = names.joined(separator: " + ")
+            }
+        }
+        return result
     }
 
     /// Total count of regular (non-fullscreen) spaces across all displays

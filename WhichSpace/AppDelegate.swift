@@ -1078,12 +1078,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
             return
         }
 
-        // Fullscreen spaces don't have a targetSpace - activate the app instead
-        if slot.targetSpace == nil {
-            _ = SpaceSwitcher.activateAppOnSpace(slot.spaceID)
-            return
-        }
-
+        // Full-screen and Split View Spaces use the same instant gesture path
+        // as regular Desktops. Activating one owning app would hand the switch
+        // back to macOS's animated application-activation route and would pick
+        // an arbitrary side of a Split View pair.
         SpaceSwitcher.switchToSpace(id: slot.spaceID, fromStatusItemClick: true)
     }
 

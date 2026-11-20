@@ -32,6 +32,9 @@ struct KeyboardPane: View {
 
     @State private var directionalVerb = Verb.switchTo
     @State private var numberedVerb = Verb.switchTo
+    /// Application names are resolved from WindowServer off-main. Keyed by
+    /// the Space identity so a Split View row can show both owning apps.
+    @State private var fullscreenApplicationNames: [String: String] = [:]
 
     /// Read to flip a card's picker to the verb a deep link or search hit
     /// targets, since the other verbs' rows are not in the hierarchy.
@@ -55,7 +58,10 @@ struct KeyboardPane: View {
         }
         // Revealing the hidden numbered rows grows the pane after the window
         // was sized to it, so the window has to follow
-        .fitsSettingsWindow(measuring: CGSize(width: 0, height: Double(visibleNumbers.count)))
+        .fitsSettingsWindow(measuring: CGSize(
+            width: 0,
+            height: Double(visibleNumbers.count + fullscreenTargets.count)
+        ))
     }
 
     @ViewBuilder
@@ -76,6 +82,7 @@ struct KeyboardPane: View {
             unsupportedNote
         }
         numberedSection
+        fullscreenSection
         behaviorNote
     }
 
@@ -279,6 +286,11 @@ struct KeyboardPane: View {
                 return path(verb.title, Localization.labelRight)
             }
         }
+        if let target = fullscreenTargets.first(where: {
+            KeyboardShortcuts.Name.jumpToFullscreenSpace(identity: $0.identity) == name
+        }) {
+            return path(fullscreenSectionTitle, fullscreenTitle(for: target))
+        }
         return name.rawValue
     }
 
@@ -345,6 +357,50 @@ struct KeyboardPane: View {
                 revealsInactiveSpaces = true
             }
         }
+    }
+
+    // MARK: - Full-Screen Spaces
+
+    private var fullscreenTargets: [FullscreenShortcutTarget] {
+        appState.fullscreenShortcutTargets
+    }
+
+    /// Full-screen and Split View Spaces have no Mission Control Desktop
+    /// number, so they get their own identity-bound rows. Closing one removes
+    /// its row without reassigning the saved shortcut to a different Space.
+    @ViewBuilder
+    private var fullscreenSection: some View {
+        let targets = fullscreenTargets
+        if !targets.isEmpty {
+            SettingsSection(fullscreenSectionTitle) {
+                ForEach(Array(targets.enumerated()), id: \.element.identity) { index, target in
+                    if index > 0 {
+                        SettingsRowDivider()
+                    }
+                    SettingsRow(
+                        icon: fullscreenApplicationNames[target.identity]?.contains(" + ") == true
+                            ? "rectangle.split.2x1"
+                            : "arrow.up.left.and.arrow.down.right"
+                    ) {
+                        Text(fullscreenTitle(for: target))
+                    } control: {
+                        recorder(for: .jumpToFullscreenSpace(identity: target.identity))
+                    }
+                }
+            }
+            .task(id: targets.map(\.identity)) {
+                fullscreenApplicationNames = await appState.fullscreenApplicationNames(for: targets)
+            }
+        }
+    }
+
+    private func fullscreenTitle(for target: FullscreenShortcutTarget) -> String {
+        fullscreenApplicationNames[target.identity]
+            ?? String(format: Localization.labelSpaceNumber, target.position)
+    }
+
+    private var fullscreenSectionTitle: String {
+        "\(Localization.labelSpaces) (\(Labels.fullscreen))"
     }
 
     /// Placeholder rows stand for Desktop numbers past the current count.

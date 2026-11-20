@@ -151,6 +151,11 @@ brew install --cask whichspace
 
 <img src="Screenshots/SectionKeybinds.png" width="500">
 
+Full-screen and Split View Spaces can carry their own shortcuts while they
+exist. A Split View pair appears as one target (for example,
+`iTerm2 + Space Pro`) and switches together using the same instant route as a
+regular Desktop.
+
 > [!NOTE]
 > The **Window** shortcuts move the front window between Spaces.
 >

@@ -18,6 +18,53 @@ struct DynamicDisplayTests {
 
     // MARK: - Multiple Display Configurations
 
+    @Test("full-screen shortcut targets use stable identity on active display")
+    func fullscreenShortcutTargetsUseStableIdentity() {
+        stub.activeDisplayIdentifier = "Main"
+        stub.displays = [
+            CGSStub.makeDisplay(
+                displayID: "Main",
+                uuidSpaces: [
+                    (id: 100, uuid: "desktop", isFullscreen: false),
+                    (id: 150, uuid: "split-view", isFullscreen: true),
+                ],
+                activeSpaceID: 100
+            ),
+            CGSStub.makeDisplay(
+                displayID: "External",
+                uuidSpaces: [(id: 250, uuid: "other-fullscreen", isFullscreen: true)],
+                activeSpaceID: 250
+            ),
+        ]
+
+        let sut = AppState(displaySpaceProvider: stub, skipObservers: true, store: store)
+
+        #expect(sut.fullscreenShortcutTargets == [
+            FullscreenShortcutTarget(
+                displayID: "Main",
+                spaceID: 150,
+                position: 2,
+                identity: "Main|uuid:split-view"
+            ),
+        ])
+    }
+
+    @Test("full-screen shortcut identity falls back to managed ID")
+    func fullscreenShortcutIdentityFallsBackToManagedID() {
+        stub.activeDisplayIdentifier = "Main"
+        stub.displays = [
+            CGSStub.makeDisplay(
+                displayID: "Main",
+                spaces: [(id: 150, isFullscreen: true)],
+                activeSpaceID: 150
+            ),
+        ]
+
+        let sut = AppState(displaySpaceProvider: stub, skipObservers: true, store: store)
+
+        #expect(sut.fullscreenShortcutTargets.first?.identity == "Main|id:150")
+    }
+
     @Test("two displays: main display active")
     func twoDisplaysWithMainActive() {
         stub.activeDisplayIdentifier = "Main"
